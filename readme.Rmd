@@ -1,0 +1,121 @@
+---
+title: "lazyeval exercises"
+author: "Tristan Mahr"
+date: "June 18, 2016"
+output: github_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, collapse = TRUE, comment = "#>")
+library("lazyeval")
+```
+
+## Part 1
+
+> Create a wrapper around lm() that allows the user to supply the response and predictors as two separate formulas.
+
+```{r}
+lm2 <- function(response, predictor, df) {
+  # I can't figure out how to uq both at once within a formula that uses a
+  # formula (~ lm(y ~ x)), so I'll plug them into a formula one by one.
+  f <- ~ y ~ x
+  f_lhs(f) <- uq(response)
+  f_rhs(f) <- uq(predictor)
+
+  f_eval(~ lm(uqf(f), df))
+}
+
+lm2(~ mpg, ~ cyl, mtcars)
+
+lm2(~ mpg, ~ hp, mtcars)
+```
+
+I don't know how I would incorporate `...` yet. I'm not that far in the vignette.
+
+***
+
+> Compare and contrast f_eval() with with().
+
+Both can use names outside of the data.
+
+```{r}
+cyl_sq <- mtcars$cyl ^ 2
+
+with(mtcars, coef(lm(mpg ~ cyl + cyl_sq)))
+
+f_eval(~ coef(lm(mpg ~ cyl + cyl_sq)), mtcars)
+```
+
+
+I thought `with` would work better with blocks of multiple lines of code, so 
+`f_eval` can do those too.
+
+```{r}
+with(mtcars, {
+  log_wt <- log(wt)
+  mean(log_wt)
+})
+
+f_eval(~ {
+  log_wt <- log(wt)
+  mean(log_wt)
+}, mtcars)
+```
+
+The main difference is that `f_eval` provides an unquoting/interpolation step in
+the middle.
+
+```{r}
+some_var <- ~ wt
+with(mtcars, mean(uq(some_var)))
+
+f_eval(~ mean(uq(some_var)), mtcars)
+```
+
+`with` jumps right into evaluation (`eval`).
+
+```{r}
+with.default
+```
+
+`f_eval` modifies the expression with `f_interp` before calling its evaluation
+step (`eval_expr`).
+
+```{r}
+f_eval
+```
+
+
+*** 
+
+> Why does this code work even though f is defined in two places? (And one of them is not a function).
+> 
+> ```{r}
+> f <- function(x) x + 1
+> f_eval(~ f(10), list(f = "a"))
+> #> [1] 11
+> ```
+
+The same reason this can work coherently:
+
+```{r}
+log(100)
+log <- 100
+log(100)
+log(log)
+```
+
+I don't know the low-level eval/apply steps in detail, but the interpreter looks
+for a function with the name `f` when evaluating a function call by `f`, so it
+skips over the piece of data named `f` that is not a function.
+
+
+```{r}
+f <- function(x) x + 1
+f_eval(~ f(10))
+f_eval(~ f(10), data = list(f = "a"))
+
+# Put a function in the data
+f_eval(~ f(10), data = list(f = sqrt))
+```
+
