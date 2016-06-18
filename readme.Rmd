@@ -18,7 +18,7 @@ library("lazyeval")
 lm2 <- function(response, predictor, df) {
   # I can't figure out how to uq both at once within a formula that uses a
   # formula (~ lm(y ~ x)), so I'll plug them into a formula one by one.
-  f <- ~ y ~ x
+  f <- y ~ x
   f_lhs(f) <- uq(response)
   f_rhs(f) <- uq(predictor)
 

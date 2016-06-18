@@ -12,7 +12,7 @@ Part 1
 lm2 <- function(response, predictor, df) {
   # I can't figure out how to uq both at once within a formula that uses a
   # formula (~ lm(y ~ x)), so I'll plug them into a formula one by one.
-  f <- ~ y ~ x
+  f <- y ~ x
   f_lhs(f) <- uq(response)
   f_rhs(f) <- uq(predictor)
 
@@ -93,7 +93,7 @@ f_eval(~ mean(uq(some_var)), mtcars)
 with.default
 #> function (data, expr, ...) 
 #> eval(substitute(expr), data, enclos = parent.frame())
-#> <bytecode: 0x0000000014ad2940>
+#> <bytecode: 0x00000000142e4698>
 #> <environment: namespace:base>
 ```
 
