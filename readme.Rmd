@@ -10,27 +10,31 @@ knitr::opts_chunk$set(echo = TRUE, collapse = TRUE, comment = "#>")
 library("lazyeval")
 ```
 
+Hadley (no-last-name-needed) has included exercises in the [lazyeval vignette](https://cran.rstudio.com/web/packages/lazyeval/vignettes/lazyeval.html).
+This is a great idea. Normally, when reading a vignette, I spend most of my time
+and attention playing with the example code. Exercises encourage this 
+exploration by giving the reader problems to solve. Let's hope he's not 
+[trolling us here](https://twitter.com/hadleywickham/status/743177000349667328).
+
 ## Part 1
 
-> Create a wrapper around lm() that allows the user to supply the response and predictors as two separate formulas.
+> Create a wrapper around lm() that allows the user to supply the response and 
+> predictors as two separate formulas.
 
 ```{r}
-lm2 <- function(response, predictor, df) {
+lm2 <- function(response, predictor, data, ...) {
   # I can't figure out how to uq both at once within a formula that uses a
   # formula (~ lm(y ~ x)), so I'll plug them into a formula one by one.
   f <- y ~ x
   f_lhs(f) <- uq(response)
   f_rhs(f) <- uq(predictor)
 
-  f_eval(~ lm(uqf(f), df))
+  lm(formula = f, data = data, ...)
 }
 
 lm2(~ mpg, ~ cyl, mtcars)
-
-lm2(~ mpg, ~ hp, mtcars)
+lm2(~ mpg, ~ hp * cyl, mtcars)
 ```
-
-I don't know how I would incorporate `...` yet. I'm not that far in the vignette.
 
 ***
 
@@ -46,9 +50,8 @@ with(mtcars, coef(lm(mpg ~ cyl + cyl_sq)))
 f_eval(~ coef(lm(mpg ~ cyl + cyl_sq)), mtcars)
 ```
 
-
-I thought `with` would work better with blocks of multiple lines of code, so 
-`f_eval` can do those too.
+I thought `with` would work better with blocks of (multiple lines of) code,
+because that's how I've seen `with` used. But `f_eval` can do those too.
 
 ```{r}
 with(mtcars, {
@@ -72,13 +75,14 @@ with(mtcars, mean(uq(some_var)))
 f_eval(~ mean(uq(some_var)), mtcars)
 ```
 
-`with` jumps right into evaluation (`eval`).
+This step difference is transparent in the function code. `with` jumps right 
+into evaluation (`eval`).
 
 ```{r}
 with.default
 ```
 
-`f_eval` modifies the expression with `f_interp` before calling its evaluation
+`f_eval` modifies the expression with `f_interp` before calling the evaluation
 step (`eval_expr`).
 
 ```{r}
@@ -88,7 +92,8 @@ f_eval
 
 *** 
 
-> Why does this code work even though f is defined in two places? (And one of them is not a function).
+> Why does this code work even though f is defined in two places? (And one of 
+> them is not a function).
 > 
 > ```{r}
 > f <- function(x) x + 1
@@ -105,9 +110,10 @@ log(100)
 log(log)
 ```
 
-I don't know the low-level eval/apply steps in detail, but the interpreter looks
-for a function with the name `f` when evaluating a function call by `f`, so it
-skips over the piece of data named `f` that is not a function.
+I don't know the low-level [eval/apply](https://groups.csail.mit.edu/mac/classes/6.001/abelson-sussman-lectures/wizard.jpg) 
+steps for R in detail, but the interpreter looks for _a function_ with the name
+`f` when evaluating a function call by `f`, so it skips over the piece of data
+named `f` that is not a function.
 
 
 ```{r}
@@ -119,3 +125,102 @@ f_eval(~ f(10), data = list(f = "a"))
 f_eval(~ f(10), data = list(f = sqrt))
 ```
 
+
+
+## Part 2
+
+> 1. Write a function that selects all rows of df where variable is greater
+> than its mean. Make the function more general by allowing the user to specify 
+> a function to use instead of mean() (e.g. median()).
+
+Because we know the function is going to be `mean` we can add an assertion that
+throws in an error if the variable has the wrong class. 
+
+```{r}
+above_average <- function(df, variable) {
+  # variable should be average-able
+  var_class <- f_eval(~ class(uq(variable)), df)
+  if (!(var_class %in% c("logical", "numeric"))) {
+    stop("`condition` must be logical.", call. = FALSE)
+  }
+  
+  rows <- f_eval(~ mean(uq(variable)) < uq(variable), df)
+  rows[is.na(rows)] <- FALSE
+  df[rows, , drop = FALSE]
+}
+
+above_average(mtcars, ~ hp)
+
+# bottom half
+above_average(mtcars, ~ -hp)
+```
+
+In the general case, we need to look up the function in the environment, not the
+data. We will also add in dots to support for function argument like `na.rm`. 
+The main function fits on one-line, but it is pretty tough to read.
+
+```{r}
+above_f <- function(df, variable, f, ...) {
+  rows <- f_eval(~ .env$f(uq(variable), ...) < uq(variable), df)
+  rows[is.na(rows)] <- FALSE
+  df[rows, , drop = FALSE]
+}
+
+above_f(mtcars, ~ mpg, median)
+above_f(mtcars, ~ mpg, function(xs, probs) quantile(xs, probs = probs), .75)
+above_f(mtcars, ~ mpg, function(xs, probs) quantile(xs, probs = probs), .95)
+above_f(mtcars, ~ mpg, max)
+```
+
+
+
+> 2. Create a version of mogrify() where the first argument is x? What happens 
+> if you try to create a new variable called x?
+
+This is the original version of the `mogrify` function. The first argument has
+a special syntactically obscured name to avoid matching any of the generated
+column names. This exercise asks us to remove this safeguard. The
+expected behavior is given below:
+
+```{r}
+mogrify1 <- function(`_df`, ...) {
+  args <- f_list(...)
+  for (nm in names(args)) `_df`[[nm]] <- f_eval(args[[nm]], `_df`)
+  `_df`
+}
+
+df <- data.frame(y = 1:5)
+mogrify1(df, z = ~ y * 2, x = ~ y * -1)
+```
+
+This is the updated version. I added a `str(args)` line to debug the structure
+of the named list being looped over.
+
+```{r}
+mogrify2 <- function(x, ...) {
+  args <- f_list(...)
+  str(args)
+  for (nm in names(args)) x[[nm]] <- f_eval(args[[nm]], x)
+  x
+}
+```
+
+We get an error when get try to create a column named `x`. The error doesn't let
+me compile this document so I use the `safely` adverb on the function to get the
+error.
+
+```{r}
+rm(x)
+purrr::safely(mogrify2)(df, z = ~ y * 2, x = ~ y * -1)
+```
+
+The error that `f` is not a formula matches the `str(args)` print-out, because
+it shows a data-frame as one of the elements in `args`. The problem is that the
+function arguments are being matched by name, not by position. The same problem
+is on display here:
+
+```{r}
+f <- function(a, ...) c(a, ...)
+f(1, 2, 3, 100)
+f(1, 2, 3, a = 100)
+```
