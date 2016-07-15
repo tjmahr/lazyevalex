@@ -325,6 +325,12 @@ f(1, 2, 3, a = 100)
 
 ## Part 4: Non-standard evaluation
 
+### Notes
+
+Nonstandard evaluation functions---which can use a bare expression, like dplyr
+verbs---should dispatch to standard evaluation version that uses formulas. Use
+`f_capture` to capture the expression in a formula.
+
 ### Exercises
 
 **Recreate `subscramble()` using `base::subset()` instead of `sieve()`. Why does
